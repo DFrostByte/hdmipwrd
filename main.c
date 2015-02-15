@@ -6,6 +6,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+/* cat /proc/bus/input/devices */
+
 #define M_INPUT_ "/dev/input/mouse0"
 #define K_INPUT_ "/dev/input/event0"
 
@@ -28,11 +30,15 @@ struct dev_ {
 };
 
 enum state_ { HDMI_STATE_ERR = -1,
-              HDMI_STATE_OFF = 0, 
+              HDMI_STATE_OFF = 0,
               HDMI_STATE_ON  = 1 };
 
 static enum state_
 _get_hdmi_state (void)
+/*
+ * determine the on/off state of the HDMI device by reading the output of the
+ * status command and comparing it to the output given when the status is off
+ */
 {
 	static const char   status_off_str[] = STATUS_MSG_OFF_;
 	static const size_t status_off_len   = sizeof (STATUS_MSG_OFF_) - 1;
@@ -41,12 +47,12 @@ _get_hdmi_state (void)
 	enum state_ state = HDMI_STATE_ERR;
 
 	FILE *pipe = popen (CMD_HDMI_STATUS_, "r");
-	if (pipe) 
+	if (pipe)
 	{
 		fread (buf, sizeof (char), status_off_len, pipe);
-		if (!ferror (pipe)) 
+		if (! ferror (pipe))
 		{
-			if (!strncmp (status_off_str, buf, status_off_len))
+			if (! strncmp (status_off_str, buf, status_off_len))
 				state = HDMI_STATE_OFF;
 			else
 				state = HDMI_STATE_ON;
@@ -103,7 +109,7 @@ _wake_ps_running (void)
 		return 1;
 }
 
-static void 
+static void
 _daemonize (void)
 {
 	pid_t pid,
@@ -135,12 +141,12 @@ _daemonize (void)
 	/* redirect input and output to /dev/null */
 
 	fd = open ("/dev/null", O_RDWR, 0);
-	if (fd != -1) 
+	if (fd != -1)
 	{
-		dup2 (fd, STDIN_FILENO); 
+		dup2 (fd, STDIN_FILENO);
 		dup2 (fd, STDOUT_FILENO);
 		dup2 (fd, STDERR_FILENO);
-	
+
 		if (fd > 2)
 			close (fd);
 	}
@@ -163,14 +169,14 @@ main (void)
 	for (dev_ptr = devs; dev_ptr->path; ++dev_ptr)
 	{
     	dev_ptr->fd = open (dev_ptr->path, O_RDONLY | O_NONBLOCK);
-    	if (dev_ptr->fd == OPEN_ERR_) 
+    	if (dev_ptr->fd == OPEN_ERR_)
 		{
         	fprintf (stderr, "Cannot open %s: %s.\n", dev_ptr->path, strerror (errno));
         	return EXIT_FAILURE;
     	}
     }
 
-	_daemonize (); 
+	_daemonize ();
 
 	int timeout = SLEEPS_;
 	int wakeup = 0;
@@ -178,22 +184,22 @@ main (void)
     {
 		/* try to read events from input devices and test for 'stay awake
          * processes'. if anything is found, reset timeout and set
-		 * HDMI_STATE_ON 
+		 * HDMI_STATE_ON
 		 */
 
 		for (dev_ptr = devs; dev_ptr->path; ++dev_ptr)
 		{
-     		while (READ_ERR_ != read (dev_ptr->fd, &ev, sizeof (ev))) 
-				wakeup = 1; 
+     		while (READ_ERR_ != read (dev_ptr->fd, &ev, sizeof (ev)))
+				wakeup = 1;
 		}
-		
-		if (wakeup || _wake_ps_running ()) 
+
+		if (wakeup || _wake_ps_running ())
 		{
 			_set_hdmi_state (HDMI_STATE_ON);
 			timeout = SLEEPS_;
 			wakeup = 0;
 		}
-		else 
+		else
 		{
 			if (timeout == 0)
 				_set_hdmi_state (HDMI_STATE_OFF);
